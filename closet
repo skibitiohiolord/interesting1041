@@ -1,0 +1,426 @@
+local RunService = game:GetService("RunService")
+local Inputs = game:GetService("UserInputService")
+
+local Players = game.Players
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character
+local Nodes = {}
+local PlayerNodes = {}
+local LpParts = {}
+local RBlackList = {}
+local Excempt = {}
+
+local offset = 0.6
+
+
+local MoveVector = Vector3.new(0,0,0)
+local MovePlayer = false
+local MovePlayerTo = false
+
+local Sphere = false
+local SphereSize = 1.8
+local SphereColour = Color3.fromRGB(55,0,255)
+
+local function UpdateSphere()
+	if not Sphere then return end
+	for _,v in pairs(Players:GetPlayers()) do
+		if v == LocalPlayer then continue end
+		if v.Character then
+			local chr = v.Character
+			if chr:FindFirstChild("HumanoidRootPart") then
+				local hrp = chr.HumanoidRootPart
+				hrp.Size = Vector3.new(SphereSize *2 + 2,2,SphereSize*2 + 1)
+				hrp.CanCollide = false
+				hrp.Transparency = 1
+			end
+		end
+	end
+	if LocalPlayer.Character then
+		local chr = LocalPlayer.Character
+		if chr:FindFirstChildWhichIsA("Tool") then
+			local tool = chr:FindFirstChildWhichIsA("Tool")
+
+			if tool:FindFirstChildWhichIsA("BasePart") then
+				local Handle = tool:FindFirstChildWhichIsA("BasePart")
+				task.spawn(function()
+					local p = Instance.new("Part")
+					p.Shape = Enum.PartType.Ball
+					p.CanCollide = false
+					p.Transparency = 0.8
+					p.Material = "Neon"
+					p.Color = SphereColour
+					p.Size = Vector3.new(SphereSize*2,SphereSize*2,SphereSize*2)
+					p.Position = Handle.Position
+					p.Parent = Handle
+					task.wait()
+					p:Destroy()
+				end)
+			end
+		end
+	end	
+
+end
+
+local function DrawLine( vec_1, vec_2)
+	local p = Instance.new("Part")
+	p.Anchored = true
+	p.CanCollide = false
+	p.Parent = workspace.PathVisualise
+	local m = (vec_1 - vec_2).Magnitude
+	p.Size = Vector3.new(0.05, 0.05,  m)
+	p.CFrame = CFrame.new(
+		vec_1:Lerp(vec_2, 0.5),
+		vec_2
+	)
+	return p
+end
+
+local function GetNodes(Part: BasePart)
+	local Nodes = {}
+	table.insert(Nodes,(Part.CFrame * CFrame.new(Vector3.new(Part.Size.X/2 + offset,0,Part.Size.Z/2 + offset))).Position)
+	table.insert(Nodes,(Part.CFrame * CFrame.new(Vector3.new(-Part.Size.X/2 - offset,0,Part.Size.Z/2 + offset))).Position)
+	table.insert(Nodes,(Part.CFrame * CFrame.new(Vector3.new(Part.Size.X/2 + offset,0,-Part.Size.Z/2 - offset))).Position)
+	table.insert(Nodes,(Part.CFrame * CFrame.new(Vector3.new(-Part.Size.X/2 - offset,0,-Part.Size.Z/2 - offset))).Position)
+	return Nodes	
+end
+
+local function Visualise(Path,Colour)
+	if not workspace.PathVisualise then
+		local c = Instance.new("Folder")
+		c.Name = "PathVisualise"
+		c.Parent = workspace
+	end
+	local folder: Folder = workspace.PathVisualise
+	for i,v in pairs(Path) do
+		if i == 1 then continue end
+		task.spawn(function()
+		local p = DrawLine(Path[i-1],Path[i])
+		p.Color = Colour
+		task.wait()
+		p:Destroy()
+		end)
+	end
+end
+
+local function ClosestPlayer(Pos: Vector3,BL)
+	local Closest = nil
+	local Pl = nil
+	local dist = math.huge
+	for _,v in pairs(Players:GetPlayers()) do
+		if v == LocalPlayer or table.find(BL,v) or v.Name == LocalPlayer.Name then continue end
+		if v.Character then
+			if v.Character:FindFirstChild("HumanoidRootPart") and v.Character:FindFirstChildWhichIsA("Humanoid") then
+				if v.Character:FindFirstChildWhichIsA("Humanoid").Health <= 0 or v.Character:FindFirstChildWhichIsA("Tool") then continue end
+				if (v.Character.HumanoidRootPart.Position - Pos).Magnitude < dist then
+					Closest = v.Character.HumanoidRootPart.Position
+					Pl = v
+					dist = (v.Character.HumanoidRootPart.Position - Pos).Magnitude
+				end
+			end
+		end
+	end
+	return Pl
+end
+
+local function ClosestPlayerPos(Pos: Vector3,BL)
+	local Closest = nil
+	local dist = math.huge
+	for _,v in pairs(Players:GetPlayers()) do
+		if v == LocalPlayer or table.find(BL,v) or v.Name == LocalPlayer.Name then continue end
+		if v.Character then
+			if v.Character:FindFirstChild("HumanoidRootPart") and v.Character:FindFirstChildWhichIsA("Humanoid") then
+				if v.Character:FindFirstChildWhichIsA("Humanoid").Health <= 0 or v.Character:FindFirstChildWhichIsA("Tool") then continue end
+				if (v.Character.HumanoidRootPart.Position - Pos).Magnitude < dist then
+					Closest = v.Character.HumanoidRootPart.Position
+					dist = (v.Character.HumanoidRootPart.Position - Pos).Magnitude
+				end
+			end
+		end
+	end
+	return Closest
+end
+
+local function UpdateNodes()
+	table.clear(Nodes)
+	for _,v in pairs(workspace:GetDescendants()) do
+		if v:IsA("BasePart") and not table.find(Excempt,v) then
+			if Players:GetPlayerFromCharacter(v:FindFirstAncestorWhichIsA("Model")) then continue end
+			if not v.CanCollide then continue end
+			table.insert(Nodes,(v.CFrame * CFrame.new(Vector3.new(v.Size.X/2 + offset,0,v.Size.Z/2 + offset))).Position)
+			table.insert(Nodes,(v.CFrame * CFrame.new(Vector3.new(-v.Size.X/2 - offset,0,v.Size.Z/2 + offset))).Position)
+			table.insert(Nodes,(v.CFrame * CFrame.new(Vector3.new(v.Size.X/2 + offset,0,-v.Size.Z/2 - offset))).Position)
+			table.insert(Nodes,(v.CFrame * CFrame.new(Vector3.new(-v.Size.X/2 - offset,0,-v.Size.Z/2 - offset))).Position)
+		end
+	end
+	for _,v in pairs(game.Players:GetPlayers()) do
+		if v == LocalPlayer then continue end
+		if v.Character then
+			for _,v2 in pairs(v.Character:GetChildren()) do
+				if v2:IsA("BasePart") and v2.CanCollide then
+					table.insert(Nodes,v2.Position + Vector3.new(v2.Size.X/2 + 0.55,0,v2.Size.Z/2 + 0.55))
+					table.insert(Nodes,v2.Position + Vector3.new(-v2.Size.X/2 - 0.55,0,v2.Size.Z/2 + 0.55))
+					table.insert(Nodes,v2.Position + Vector3.new(-v2.Size.X/2 - 0.55,0,-v2.Size.Z/2 - 0.55))
+					table.insert(Nodes,v2.Position + Vector3.new(v2.Size.X/2 + 0.55,0,-v2.Size.Z/2 - 0.55))
+				end
+			end
+		end
+	end
+	if LocalPlayer.Character then
+		for _,v in pairs(LocalPlayer.Character:GetDescendants()) do
+			if v:IsA("BasePart") then
+				table.insert(LpParts,v)
+			end
+		end
+	end
+end
+
+local function UpdatePlayerParts(LocalPCharacter: Model)
+	table.clear(PlayerNodes)
+	table.clear(LpParts)
+	for _,v in pairs(game.Players:GetPlayers()) do
+		if v == LocalPlayer then continue end
+		if v.Character then
+			for _,v2 in pairs(v.Character:GetChildren()) do
+				if v2:IsA("BasePart") and v2.CanCollide then
+					table.insert(PlayerNodes,v2.Position + Vector3.new(v2.Size.X/2 + 0.55,0,v2.Size.Z/2 + 0.55))
+					table.insert(PlayerNodes,v2.Position + Vector3.new(-v2.Size.X/2 - 0.55,0,v2.Size.Z/2 + 0.55))
+					table.insert(PlayerNodes,v2.Position + Vector3.new(-v2.Size.X/2 - 0.55,0,-v2.Size.Z/2 - 0.55))
+					table.insert(PlayerNodes,v2.Position + Vector3.new(v2.Size.X/2 + 0.55,0,-v2.Size.Z/2 - 0.55))
+				end
+			end
+		end
+	end
+	if LocalPlayer.Character then
+		for _,v in pairs(LocalPlayer.Character:GetDescendants()) do
+			if v:IsA("BasePart") then
+				table.insert(LpParts,v)
+			end
+		end
+	end
+end
+
+local function Face(Position: Vector3,HumanoidRootPart: Part,Offset)
+	if HumanoidRootPart ~= nil then
+		local Direction = ((Position - HumanoidRootPart.Position) * Vector3.new(1,0,1)).Unit
+		local NewOrientation = CFrame.new(HumanoidRootPart.Position,HumanoidRootPart.Position + Direction) * Offset
+
+		HumanoidRootPart.CFrame = NewOrientation
+	end
+end
+
+
+local function CheckMoveTo(From: Vector3,To: Vector3,Params,Target,Part: BasePart)
+	if To == From or (To-From).Magnitude > 512 then return nil end
+	local Closest = workspace:Blockcast(CFrame.new(From,To),Vector3.new(0.8,0.8,0.001),To-From,Params)
+
+	return Closest	
+end
+
+local function RemoveBetween(s,e,Table)
+	local c  = {}
+	for i,v in pairs(Table) do
+		if i >= s and i <= e then
+			table.insert(c,v)
+		end
+	end
+	return c
+end
+
+
+
+local function ClosestPath(From: Vector3,To: Vector3,BlackList,Target,Part: BasePart,PrevPath,PrevDist)
+	From = Vector3.new(From.X,Part.Position.Y-2,From.Z)
+	local Params = RaycastParams.new()
+	local TempBlackList = {}
+	Params.FilterType = Enum.RaycastFilterType.Exclude
+	Params.FilterDescendantsInstances = LpParts
+	local Distance = 0
+	local Vector = Vector3.new(1,0,0)
+	local Iteration = 1
+	
+	local Current = From
+
+	
+	local Path = {From}
+	local path2 = {From}
+	
+	--[[
+		IDEA ON HOW TO FIX:
+		Make the 2nd fastest check take place inside of the first loop
+		(this means check it for each node -> node action)
+		check the 2 fastest from the previous node to the next node
+	]]
+	
+	local Block = true
+	repeat
+		
+		Block = CheckMoveTo(Current,To,Params,Target,Part)
+		
+		if Block then
+			
+			if not (Block.Instance:FindFirstAncestorWhichIsA("Model") == Target.Character) then
+				
+			
+			
+			local Dist = math.huge
+			local Closest = nil
+			
+			for _,v in pairs(GetNodes(Block.Instance)) do
+				if v == Current then continue end
+				if not table.find(TempBlackList,v) and not CheckMoveTo(Current,v,Params,Target,Part) then
+					if (Block.Position-v).Magnitude < Dist then
+						Dist = (Current-v).Magnitude
+						Closest = v
+					end
+				end
+			end
+			if not Closest then
+				for _,v in pairs(Nodes) do
+					if v == Current then continue end
+					if not table.find(TempBlackList,v) and not CheckMoveTo(Current,v,Params,Target,Part) then
+						if (Block.Position-v).Magnitude < Dist then
+							Dist = (Current-v).Magnitude
+							Closest = v
+						end
+					end
+				end
+			end
+			
+			
+			
+			if Closest then
+				if Iteration > 1 then
+					if not CheckMoveTo(Path[#Path-1],Closest,Params,Target,Part) then
+						table.remove(Path,#Path)
+					end
+				end
+				table.insert(Path,Closest)
+				table.insert(TempBlackList,Closest)
+				Current = Closest
+			end
+			else
+				Block = false
+			end
+		end
+		Iteration += 1
+	until not Block or Iteration > 15
+	
+	table.insert(Path,To)
+
+	Distance = 0
+	for i,v in pairs(Path) do
+		if i == 1 then continue end
+		Distance += (Path[i-1]-v).Magnitude
+	end
+	Vector = ((Path[2]-Path[1]) * Vector3.new(1,0,1)).Unit
+	if PrevPath and PrevDist and #PrevPath > 2 then
+		if not CheckMoveTo(From,PrevPath[2],Params,Target,Part) and not CheckMoveTo(PrevPath[#PrevPath-1],To,Params,Target,Part) then
+			if PrevDist + (From-PrevPath[2]).Magnitude + (To-PrevPath[#PrevPath]).Magnitude - (PrevPath[1]-PrevPath[2]).Magnitude < Distance then
+				Path = PrevPath
+				Path[1] = From
+				Path[#Path] = To
+			end
+		end
+	end
+	
+	Distance = 0
+	for i,v in pairs(Path) do
+		if i == 1 then continue end
+		Distance += (Path[i-1]-v).Magnitude
+	end
+	Vector = ((Path[2]-Path[1]) * Vector3.new(1,0,1)).Unit
+	
+	PrevPath = Path
+	PrevDist = Distance
+	
+	--Visualise(Path,Color3.fromRGB(255,0,0))
+	
+	if Vector then
+		return Vector,Distance,{PrevPath,PrevDist}
+	end
+	return Vector3.new(0,0,0),0,{{},math.huge}
+end
+
+local HumanoidRootPart
+local Vector,Distance
+local Closest = nil
+
+local Track = false
+
+local function OnKey(Key,gpe)
+	if Key.KeyCode == Enum.KeyCode.R then
+		Track = not Track
+	end
+	if Key.KeyCode == Enum.KeyCode.T then
+		Sphere = not Sphere
+	end
+end
+
+UpdatePlayerParts()
+local c = {{},0,Vector3.new(0,0,0)}
+local WiggleThing = 0
+local Right = false
+local function Main(step)
+	UpdateNodes()
+	UpdatePlayerParts()
+	if LocalPlayer.Character then
+		Character = LocalPlayer.Character
+		if Character:FindFirstChild("HumanoidRootPart") then
+			HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+			if HumanoidRootPart then
+			Closest = ClosestPlayerPos(HumanoidRootPart.Position,{LocalPlayer})
+			Target = ClosestPlayer(HumanoidRootPart.Position,{LocalPlayer})
+			if Closest and Track then
+				Vector,Distance,c = ClosestPath(HumanoidRootPart.Position - Vector3.new(0,-2,0), Vector3.new(Closest.X,HumanoidRootPart.Position.Y - 2,Closest.Z) ,{Vector3.new(1239612,312,3272)},Target,HumanoidRootPart,c[1],c[2])
+				if Vector and Track then
+					if Distance < 5.7 then
+						if WiggleThing < (-math.pi/12) or WiggleThing > (math.pi/12) then
+							Right = not Right
+						end
+						
+						if Right then
+							WiggleThing += (math.pi/12 * step * 20)
+						else
+							WiggleThing -= (math.pi/12 * step * 20)
+						end
+						
+						Face(HumanoidRootPart.Position + Vector,HumanoidRootPart,CFrame.Angles(0,math.pi/4 + WiggleThing,0))
+					else
+						WiggleThing = 0
+						Face(HumanoidRootPart.Position + Vector,HumanoidRootPart,CFrame.Angles(0,-math.pi/2,0))
+					end
+					MoveVector = Vector
+					MovePlayer = true
+				end
+			end
+			end
+		end
+	end
+end
+
+RunService:BindToRenderStep("MovePlayer", Enum.RenderPriority.Character.Value + 1, function()
+	if LocalPlayer.Character then
+		local HRP = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+		local Humanoid = LocalPlayer.Character:FindFirstChild("Humanoid")
+		if Humanoid and HRP and MovePlayer then
+			if MovePlayerTo then
+				if (HRP.Position - MoveVector).Magnitude > 0.08 then
+					MoveVector = (MoveVector - HRP.Position).Unit * Vector3.new(1,0,1)
+				else
+					MovePlayerTo = false
+					MovePlayer = false
+					return
+				end
+				MovePlayerTo = false
+			end
+			Humanoid.AutoRotate = false
+			Humanoid:Move(MoveVector, false)
+			MovePlayer = false
+		else
+			Humanoid.AutoRotate =  true
+		end
+	end
+end)
+RunService.RenderStepped:Connect(Main)
+RunService.Heartbeat:Connect(UpdateSphere)
+Inputs.InputBegan:Connect(OnKey)
